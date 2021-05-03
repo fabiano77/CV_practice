@@ -22,10 +22,7 @@ void initial_setting()
 	class_names[3] = "square";
 	ref_avg = vector<vector<double>>(4);
 	ref_stdev = vector<vector<double>>(4);
-	//rotation = double(4.3);
-	/*rotation = double(1.5);*/
-	rotation = double(6.6);
-	//rotation = double(1);
+	rotation = double(1);
 }
 Mat toRed(Mat src)
 {
@@ -257,7 +254,7 @@ Mat Contour_tracing_based_method(Mat binimg, vector<pair<int, int>>& contour_poi
 			else *(labImage.data + (labImage.cols * (i)) + (j)) = 0;
 		}
 	}
-	// cout << "label number " << labelnumber << endl;
+	// cout << "label number " << labelnumber << '\n';
 	return contourImage;
 }
 void calCoord(int i, int* y, int* x)
@@ -378,9 +375,20 @@ vector<pair<int, int>> BTracing8(int y, int x, int label, bool tag, Mat img, Mat
 vector<double> getLCSarray(vector<pair<int, int>> contour_points)
 {
 	vector<double> LCSarray;
+	//int window_size = 9;	// 1, 2만 나옴
+	//int window_size = 11;	// 3만 나옴
+	//int window_size = 13; // 3졸래강세
+	int window_size = 19; // 1, 2, (3)강세
+	//int window_size = 21; // 1, 2, 3	강세
+	//int window_size = 23; // 1, 2, 3 강세 0빼고 완벽.
+	//int window_size = 25; // 1, 2, 3 강세 0빼고 완벽.
+	//int window_size = 27; // 1, 2		강세시작
+	//int window_size = 35;	// 1, 2 강세
 	//int window_size = 23;
-	int window_size = (contour_points.size() / 50)*2 +1;
-	//cout << "window_size : " << window_size << endl;
+
+
+	//int window_size = (contour_points.size() / 35)*2 +1;
+	//cout << "window_size : " << window_size << '\n';
 
 	for (int i = 0; i < contour_points.size(); i++)
 	{
@@ -405,7 +413,31 @@ vector<double> getLCSarray(vector<pair<int, int>> contour_points)
 			d = abs((double)point.first - end.first);
 		LCSarray.push_back(d);
 	}
-	return LCSarray;
+
+	// 가장 큰 점의 index를 찾는다.
+	double max_point = 0;
+	int shift_index = 0;
+	for (int i = 0; i < LCSarray.size(); i++)
+	{
+		if (LCSarray[i] > max_point)
+		{
+			max_point = LCSarray[i];
+			shift_index = i;
+		}
+	}
+	vector<double> shiftedLCSarray(LCSarray.size());
+
+	// 가장 큰 점이 처음에 오도록 shift
+	for (int i = 0; i < shiftedLCSarray.size(); i++)
+	{
+		if ((i + shift_index) >= LCSarray.size())
+			shiftedLCSarray[i] = LCSarray[i + shift_index - LCSarray.size()];
+		else
+			shiftedLCSarray[i] = LCSarray[i + shift_index];
+	}
+
+	nomalization(shiftedLCSarray);
+	return shiftedLCSarray;
 }
 vector<double> featureExtraction(Mat src)
 {
@@ -428,189 +460,119 @@ void nomalization(vector<double>& pattern)
 double DTW(vector<double> A, vector<double> B, vector<pair<int, int>>& path)
 {
 	unsigned int A_size((unsigned int)A.size()), B_size((unsigned int)B.size());
-	double min_S(INFINITY);
-	int cnt = 0;
-	double min_first_error(INFINITY);
-	double max_first_value(0);
-	// 회전하며 feature를 비교함.
-	//while (cnt < ((B_size) / 5.0))
 
-	
-
-	while (!cnt)
+	double S(INFINITY);
+	// 2차원 배열 동적할당
+	double** D; int** G;
+	D = new double* [A_size]; G = new int* [A_size];
+	for (unsigned int i = 0; i < A_size; i++)
 	{
-		vector<double> B_rotation;
-		for (int i = 0; i < B_size; i++)
-		{
-			int shift_i = (i + cnt) >= B_size ? i + cnt - B_size : i + cnt;
-			B_rotation.push_back(B[shift_i]);
-		}
-		// cnt += B_size;				// 회전 안함
-		cnt += ((B_size)/5.0) / rotation;		// 360도를 n번 나누어 rotation
+		D[i] = new double[B_size]; G[i] = new int[B_size];
+	}
 
-		double first_error = error(A[0], B_rotation[0]);
-		//if (first_error < min_first_error)
-		//	min_first_error = first_error;
-		//else if (first_error < min_first_error * 1.1)
-		//	0;
-		//else
-		//	continue;
-		//double first_value = A[0];
-		//if (first_value > max_first_value)
-		//	max_first_value = first_value;
-		//else
-		//	continue;
+	// initialization
+	D[0][0] = d(A[0], B[0]); G[0][0] = 0;
+	for (unsigned int j = 1; j < B_size; j++)
+	{
+		D[0][j] = D[0][j - 1] + d(A[0], B[j]);
+		G[0][j] = 2;
+	}
+	for (unsigned int i = 1; i < A_size; i++)
+		//D[i][0] = INFINITY;
+		D[i][0] = D[i - 1][0] + d(A[i], B[0]);
 
-		double S(INFINITY);
-		// 2차원 배열 동적할당
-		double** D; int** G;
-		D = new double* [A_size]; G = new int* [A_size];
-		for (unsigned int i = 0; i < A_size; i++)
+	// Forward
+	for (uint i = 1; i < A_size; i++)
+		for (uint j = 1; j < B_size; j++)
 		{
-			D[i] = new double[B_size]; G[i] = new int[B_size];
+			D[i][j] = d(A[i], B[j]) + min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
+			G[i][j] = arg_min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
 		}
-
-		// initialization
-		D[0][0] = d(A[0], B_rotation[0]); G[0][0] = 0;
-		for (unsigned int j = 1; j < B_size; j++)
+	// Backward
+	int i(A_size - 1), j(B_size - 1);
+	int k = 1;
+	//vector<pair<int, int>> temp_path;
+	while ((i != 0) && (j != 0))
+	{
+		// p[k] = G[i][j];
+		path.push_back({ i, j });
+		switch (G[i][j])
 		{
-			D[0][j] = D[0][j - 1] + d(A[0], B_rotation[j]);
-			G[0][j] = 2;
-		}
-		for (unsigned int i = 1; i < A_size; i++)
-			//D[i][0] = INFINITY;
-			D[i][0] = D[i - 1][0] + d(A[i], B_rotation[0]);
-
-		// Forward
-		for (uint i = 1; i < A_size; i++)
-			for (uint j = 1; j < B_size; j++)
-			{
-				D[i][j] = d(A[i], B_rotation[j]) + min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
-				G[i][j] = arg_min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
-			}
-		// Backward
-		int i(A_size - 1), j(B_size - 1);
-		int k = 1;
-		vector<pair<int, int>> temp_path;
-		while ((i != 0) && (j != 0))
-		{
-			// p[k] = G[i][j];
-			temp_path.push_back({ i, j });
-			switch (G[i][j])
-			{
-			case 1: i--; k++; break;
-			case 2: j--; k++; break;
-			case 3: i--; j--; k++; break;
-			}
-		}
-		temp_path.push_back({ 0, 0 });
-		// Termination
-		S = D[A_size - 1][B_size - 1] / k;
-
-		// 2차원 배열 동적할당 해제
-		for (unsigned int i = 0; i < A_size; i++)
-		{
-			delete[] D[i];	delete[] G[i];
-		}
-		delete[] D; delete[] G;
-		if (S < min_S)
-		{
-			min_S = S;
-			path = temp_path;
+		case 1: i--; k++; break;
+		case 2: j--; k++; break;
+		case 3: i--; j--; k++; break;
 		}
 	}
-	return min_S;
+	path.push_back({ 0, 0 });
+	// Termination
+	S = D[A_size - 1][B_size - 1] / k;
+	//cout << "k : " << k << '\n';
+
+	// 2차원 배열 동적할당 해제
+	for (unsigned int i = 0; i < A_size; i++)
+	{
+		delete[] D[i];	delete[] G[i];
+	}
+	delete[] D; delete[] G;
+
+	return S;
 }
 double SDTW(vector<double> A, vector<double> ref_avg, vector<double> ref_stdev)
 {
-	nomalization(A);
 	unsigned int A_size((unsigned int)A.size()), ref_size((unsigned int)ref_avg.size());
-	double min_first_error(INFINITY);
-	double max_first_value(0);
-	double min_S(INFINITY);
-	int cnt = 0;
-	// 회전하며 feature를 비교함.
-	while (cnt < ((A_size)/5.0))
+
+	double S(INFINITY);
+	// 2차원 배열 동적할당
+	double** D; int** G;
+	D = new double* [A_size]; G = new int* [A_size];
+	for (unsigned int i = 0; i < A_size; i++)
 	{
-		vector<double> A_rotation;
-		for (int i = 0; i < A_size; i++)
+		D[i] = new double[ref_size]; G[i] = new int[ref_size];
+	}
+
+	// initialization
+	D[0][0] = statistical_distance(A[0], ref_avg[0], ref_stdev[0]); G[0][0] = 0;
+	for (unsigned int j = 1; j < ref_size; j++)
+	{
+		// D[0][j] = D[0][j - 1] + d(A[0], A_rotation[j]);
+		D[0][j] = D[0][j - 1] + statistical_distance(A[0], ref_avg[j], ref_stdev[j]);
+		G[0][j] = 2;
+	}
+	for (unsigned int i = 1; i < A_size; i++)
+		D[i][0] = INFINITY;
+
+	// Forward
+	for (uint i = 1; i < A_size; i++)
+		for (uint j = 1; j < ref_size; j++)
 		{
-			int shift_i = (i + cnt) >= A_size ? i + cnt - A_size : i + cnt;
-			A_rotation.push_back(A[shift_i]);
+			// D[i][j] = d(A[i], A_rotation[j]) + min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
+			D[i][j] = statistical_distance(A[i], ref_avg[j], ref_stdev[j]) + min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
+			G[i][j] = arg_min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
 		}
-		cnt += A_size;				// 회전 안함
-		//cnt += (A_size) / (61.6);		// 360도를 n번 나누어 rotation
-
-		double first_error = error(A_rotation[0], ref_avg[0]);
-		if (first_error < min_first_error)
-			min_first_error = first_error;
-		else if (first_error < min_first_error*2)
-			cnt;
-		else
-			continue;
-
-		//double first_value = A[0];
-		//if (first_value > max_first_value)
-		//	max_first_value = first_value;
-		//else
-		//	continue;
-
-		double S(INFINITY);
-		// 2차원 배열 동적할당
-		double** D; int** G;
-		D = new double* [A_size]; G = new int* [A_size];
-		for (unsigned int i = 0; i < A_size; i++)
+	// Backward
+	int i(A_size - 1), j(ref_size - 1);
+	int k = 1;
+	while ((i != 0) && (j != 0))
+	{
+		switch (G[i][j])
 		{
-			D[i] = new double[ref_size]; G[i] = new int[ref_size];
-		}
-
-		// initialization
-		D[0][0] = statistical_distance(A_rotation[0], ref_avg[0], ref_avg[0]); G[0][0] = 0;
-		for (unsigned int j = 1; j < ref_size; j++)
-		{
-			// D[0][j] = D[0][j - 1] + d(A[0], A_rotation[j]);
-			D[0][j] = D[0][j - 1] + statistical_distance(A_rotation[0], ref_avg[j], ref_avg[j]);
-			G[0][j] = 2;
-		}
-		for (unsigned int i = 1; i < A_size; i++)
-			D[i][0] = INFINITY;
-
-		// Forward
-		for (uint i = 1; i < A_size; i++)
-			for (uint j = 1; j < ref_size; j++)
-			{
-				// D[i][j] = d(A[i], A_rotation[j]) + min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
-				D[i][j] = statistical_distance(A_rotation[i], ref_avg[j], ref_avg[j]) + min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
-				G[i][j] = arg_min3(D[i - 1][j], D[i][j - 1], D[i - 1][j - 1]);
-			}
-		// Backward
-		int i(A_size - 1), j(ref_size - 1);
-		int k = 1;
-		while ((i != 0) && (j != 0))
-		{
-			switch (G[i][j])
-			{
-			case 1: i--; k++; break;
-			case 2: j--; k++; break;
-			case 3: i--; j--; k++; break;
-			}
-		}
-		// Termination
-		S = D[A_size - 1][ref_size - 1] / k;
-
-		// 2차원 배열 동적할당 해제
-		for (unsigned int i = 0; i < A_size; i++)
-		{
-			delete[] D[i];	delete[] G[i];
-		}
-		delete[] D; delete[] G;
-		if (S < min_S)
-		{
-			min_S = S;
+		case 1: i--; k++; break;
+		case 2: j--; k++; break;
+		case 3: i--; j--; k++; break;
 		}
 	}
-	// cout << " dissimilarity : " << min_S << endl;
-	return min_S;
+	// Termination
+	S = D[A_size - 1][ref_size - 1]/ k;
+
+	// 2차원 배열 동적할당 해제
+	for (unsigned int i = 0; i < A_size; i++)
+	{
+		delete[] D[i];	delete[] G[i];
+	}
+	delete[] D; delete[] G;
+
+
+	return S;
 }
 
 int classification(Mat src)
@@ -626,7 +588,7 @@ int classification(Mat src)
 	for (int i = 0; i < 4; i++)
 	{
 		double dissimilarity = SDTW(pattern, ref_avg[i], ref_stdev[i]);
-		cout << class_names[i] << "      \tscore : " << dissimilarity << endl;
+		cout << class_names[i] << "      \tscore : " << dissimilarity << '\n';
 		if (min_dissimilarity > dissimilarity)
 		{
 			min_dissimilarity = dissimilarity;
@@ -643,7 +605,7 @@ void learningAllData(vector<vector<Mat>> img_memory)
 }
 void learningFeature(vector<Mat> img_list, string filename)
 {
-	cout << "learning start " << endl;
+	cout << "learning start " << '\n';
 	assert(img_list.size());
 
 	// 임의의 패턴을 평균 패턴으로 초기화.
@@ -651,22 +613,16 @@ void learningFeature(vector<Mat> img_list, string filename)
 	vector<double> avgPattern(randPattern.size());
 	for (int i = 0; i < avgPattern.size(); i++)
 		avgPattern[i] = randPattern[i] ? randPattern[i] : (rand()/(double)RAND_MAX)*10;
-	nomalization(avgPattern);
 
 	// img_list로 부터 LCS 패턴 리스트 추출
 	vector<vector<double>> patternList;
 	for (int i = 0; i < img_list.size(); i++)
 		patternList.push_back(featureExtraction(img_list[i]));
 
-	// 패턴 크기 정규화
-	// A 크기 정규화
-	for (int i = 0; i < patternList.size(); i++)
-		nomalization(patternList[i]);
-
 
 	// 평균 패턴과 매치되는 값들을 저장할 리스트
 	vector<vector<double>> avgPattern_matching_values;
-	vector<double> pattern_deviation;
+	vector<double> pattern_deviation(avgPattern.size());
 
 	int iteration = 1;
 	int changed_cnt = 5;
@@ -696,23 +652,24 @@ void learningFeature(vector<Mat> img_list, string filename)
 		for (int i = 0; i < avgPattern.size(); i++)
 		{
 			double new_avg_val = getAvg(avgPattern_matching_values[i]);
-			if (error(avgPattern[i], new_avg_val) > 1.3) // 백분율 오차 0.8% 이내
-			//if (error(avgPattern[i], new_avg_val)) // 백분율 오차 0.8% 이내
+			//if (error(avgPattern[i], new_avg_val) > 0.5) // 백분율 오차 0.8% 이내
+			if (error(avgPattern[i], new_avg_val)) // 백분율 오차 0.8% 이내
 			{
 				avgPattern[i] = new_avg_val;
 				changed_cnt++;
 			}
 		}
-		pattern_deviation = vector<double>(avgPattern.size());
-		for (int i = 0; i < avgPattern.size(); i++)
-			pattern_deviation[i] = compute_deviation(avgPattern_matching_values[i], avgPattern[i]);
-		double avgOfDeviation = getAvg(pattern_deviation);
+		//pattern_deviation = vector<double>(avgPattern.size());
+		//for (int i = 0; i < avgPattern.size(); i++)
+		//	pattern_deviation[i] = compute_deviation(avgPattern_matching_values[i], avgPattern[i]);
 
-		cout << filename << "\t iteration : " << iteration++ << ",  \tchanged : " << changed_cnt << ", \tavg of stdev : " << avgOfDeviation << endl;
+		cout << filename << "\t iteration : " << iteration++ << ",  \tchanged : " << changed_cnt << '\n';// << ", \tavg of stdev : " << avgOfDeviation << '\n';
 	}
-
+	for (int i = 0; i < avgPattern.size(); i++)
+		pattern_deviation[i] = compute_deviation(avgPattern_matching_values[i], avgPattern[i]);
 	// compute_covariance_matrix(avgPattern_matching_values, covar_mat);
 	// csv 파일로 학습한 결과 저장.
+
 	write_csv(filename, avgPattern, pattern_deviation);
 }
 
@@ -753,11 +710,21 @@ void read_csv(string name, vector<double>& dst_avg, vector<double>& dst_stdev)
 	myfile.open(name + ".csv");
 	if (myfile.fail())
 	{
-		cout << "해당 경로에 학습된 패턴 데이터가 존재하지 않습니다." << endl;
+		cout << "해당 경로에 학습된 패턴 데이터가 존재하지 않습니다." << '\n';
 		return;
 	}
 	vector<vector<string>> data;
 	string line;
+	double weight = 1.0;
+	if (name == "star")
+		weight = 1.7;
+	else if (name == "circle")
+		weight = 1.0;
+	else if (name == "triangle")
+		weight = 1.04;
+	else if (name == "square")
+		weight = 0.98;
+	cout << "가중치 : " << weight << '\n';
 	while (myfile.good())
 	{
 		vector<string> row = csv_read_row(myfile, ',');
@@ -766,7 +733,7 @@ void read_csv(string name, vector<double>& dst_avg, vector<double>& dst_stdev)
 	for (int i = 0; i < data[0].size() - 1; i++)
 		dst_avg.push_back(stod(data[0][i]));
 	for (int i = 0; i < data[1].size() - 1; i++)
-		dst_stdev.push_back(stod(data[1][i]));
+		dst_stdev.push_back(stod(data[1][i])* weight);
 }
 vector<string> csv_read_row(string& line, char delimiter)
 {
@@ -829,11 +796,11 @@ double min3(double a, double b, double c)
 int arg_min3(double a, double b, double c)
 {
 	double minVal = min3(a, b, c);
-	if (minVal == a)
-		return 1;
+	if (minVal == c)
+		return 3;
 	else if (minVal == b)
 		return 2;
-	return 3;
+	return 1;
 }
 double error(double a, double b)
 {
@@ -1018,23 +985,27 @@ vector<vector<double>> getInverse(const vector<vector<double>> vect) {
 }
 void printMatrix(const vector<vector<double>> vect) {
 	for (size_t i = 0; i < vect.size(); i++) {
-		for (size_t j = 0; j < vect[0].size(); j++) {
+		//cout << vect[i].size() << " " ;
+		for (size_t j = 0; j < vect[i].size(); j++) {
 			cout << setw(8) << vect[i][j] << " ";
 		}
 		cout << "\n";
 	}
+	cout << "\n";
 }
 double statistical_distance(double a, double avg, double stdev)
 {
 	if (stdev == 0.0)
 		stdev = 0.0005;
+	//cout << "stdev : " << stdev << ", ";
+	//cout << " a = " << a << " 일 때, stdev" << stdev << ", 거리 : " << (abs(a - avg) / stdev) << "\n";
 	return (abs(a - avg) / stdev);
 }
 
 vector<string> get_files_inDirectory(const string& _path, const string& _filter)
 {
 	string searching = _path + _filter;
-	cout << "searching" << searching << endl;
+	cout << "searching" << searching << '\n';
 	vector<string> returnVal;
 
 	_finddata_t fd;
